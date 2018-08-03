@@ -323,36 +323,10 @@ namespace BlackVueDownloader.PCL
 			client.DownloadProgressChanged += (sender, args) =>
 			{
 				progress.Report(
-					$"Total: {args.TotalBytesToReceive} \t Transfered: {args.BytesReceived} \t ({args.ProgressPercentage}%)");
+					$"Total: {ByteSize.FromBytes(args.TotalBytesToReceive).ToString()} \t Transfered: {ByteSize.FromBytes(args.BytesReceived).ToString()} \t ({args.ProgressPercentage}%)");
 			};
 
 			await client.DownloadFileTaskAsync(new Uri(url), outputFile);
-
-			//var progressMsgHandler = new ProgressMessageHandler(new HttpClientHandler());
-
-			//progressMsgHandler.HttpReceiveProgress += (sender, e) =>
-			//{
-			//	progress.Report(
-			//		$"Total: {e.TotalBytes} \t Transfered: {e.BytesTransferred} \t ({e.ProgressPercentage}%)");
-			//};
-
-
-			//var client = new HttpClient(progressMsgHandler);
-
-			//using (HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token))
-			//using (Stream streamToReadFrom = await response.Content.ReadAsStreamAsync())
-			//{
-			//	if (!response.IsSuccessStatusCode)
-			//	{
-			//		throw new Exception(string.Format("The request returned with HTTP status code {0}", response.StatusCode));
-			//	}
-
-			//	string fileToWriteTo = Path.GetTempFileName();
-			//	using (Stream streamToWriteTo = File.Open(fileToWriteTo, FileMode.Create))
-			//	{
-			//		await streamToReadFrom.CopyToAsync(streamToWriteTo, token);
-			//	}
-			//}
 		}
 	}
 }
