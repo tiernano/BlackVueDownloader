@@ -1,9 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 using ByteSizeLib;
 using Flurl.Http;
 using NLog;
@@ -47,20 +51,44 @@ namespace BlackVueDownloader.PCL
         /// </summary>
         /// <param name="ip"></param>
         /// <param name="directory"></param>
-        public void Run(string ip, string directory)
+        public void Run(DownloadOptions options)
         {
-            var body = QueryCameraForFileList(ip);
+            var body = QueryCameraForFileList(options.IPAddr);
             var list = GetListOfFilesFromResponse(body);
+			if (options.LastDays.HasValue)
+			{
+				list = FilterList(list, options.LastDays);
+			}
 
-            var tempdir = Path.Combine(directory, "_tmp");
-            var targetdir = Path.Combine(directory, "Record");
+            var tempdir = Path.Combine(options.OutputDirectory, "_tmp");
+            var targetdir = Path.Combine(options.OutputDirectory, "Record");
 
             CreateDirectories(tempdir, targetdir);
 
-            ProcessList(ip, list, tempdir, targetdir);
+            ProcessList(options.IPAddr, list, tempdir, targetdir);
         }
 
-        public void CreateDirectories(string tempdir, string targetdir)
+		public List<Tuple<string, DateTime>> FilterList(List<Tuple<string,DateTime>> input, int? lastDays)
+		{
+			DateTime startDate = DateTime.Now;
+			DateTime endDate = startDate.AddDays(-1);
+			if (lastDays.HasValue)
+			{
+				endDate = startDate.AddDays(lastDays.Value * -1);
+			}
+
+			return FilterList(input, startDate, endDate);
+		}
+
+		public List<Tuple<string, DateTime>> FilterList(List<Tuple<string, DateTime>> input, DateTime startDate, DateTime endDate)
+		{
+			List<Tuple<string, DateTime>> resultList = (from x in input
+														where x.Item2 >= startDate && x.Item2 <= endDate
+														select x).ToList();
+			return resultList;
+		}
+
+		public void CreateDirectories(string tempdir, string targetdir)
         {
             if (!_fileSystemHelper.DirectoryExists(tempdir))
                 _fileSystemHelper.CreateDirectory(tempdir);
@@ -79,117 +107,144 @@ namespace BlackVueDownloader.PCL
         /// </summary>
         /// <param name="body"></param>
         /// <returns>Normalized list of files</returns>
-        public IList<string> GetListOfFilesFromResponse(string body)
+        public List<Tuple<string, DateTime>> GetListOfFilesFromResponse(string body)
         {
             // Strip the header. Parse each element of the body, strip the non-filename part, and return a list.
-            return body.ParseBody().Select(e => e.Replace("n:/Record/", "").Replace(",s:1000000", "")).ToList();
+            var files =  body.ParseBody().Select(e => e.Replace("n:/Record/", "").Replace(",s:1000000", "")).ToList();
+
+			List<Tuple<string, DateTime>> result = new List<Tuple<string, DateTime>>();
+
+			foreach(var x in files)
+			{
+				string[] parts = x.Split('_');
+
+				string datePart = parts[0];
+				string timePart = parts[1];
+
+				string overall = $"{datePart} {timePart}";
+
+				var date =  DateTime.ParseExact(overall, "yyyyMMdd HHmmss", CultureInfo.InvariantCulture);
+				result.Add(new Tuple<string, DateTime>(x, date));
+			}
+			return result;
         }
 
-	    /// <summary>
-	    /// For given camera ip, filename, and filetype, download the file and return a status
-	    /// </summary>
-	    /// <param name="ip"></param>
-	    /// <param name="filename"></param>
-	    /// <param name="filetype"></param>
-	    /// <param name="tempdir"></param>
-	    /// <param name="targetdir"></param>
-	    public void DownloadFile(string ip, string filename, string filetype, string tempdir, string targetdir)
-        {
-            string filepath;
-            string tempFilepath;
+		/// <summary>
+		/// For given camera ip, filename, and filetype, download the file and return a status
+		/// </summary>
+		/// <param name="ip"></param>
+		/// <param name="filename"></param>
+		/// <param name="filetype"></param>
+		/// <param name="tempdir"></param>
+		/// <param name="targetdir"></param>
+		public void DownloadFile(string ip, string filename, string filetype, string tempdir, string targetdir)
+		{
+			string filepath;
+			string tempFilepath;
 
-            try
-            {
-                filepath = Path.Combine(targetdir, filename);
-            }
-            catch (Exception e)
-            {
-                logger.Error($"Path Combine exception for filepath, filename {filename}, Exception Message: {e.Message}");
-                BlackVueDownloaderCopyStats.Errored++;
-                return;
-            }
+			try
+			{
+				filepath = Path.Combine(targetdir, filename);
+			}
+			catch (Exception e)
+			{
+				logger.Error($"Path Combine exception for filepath, filename {filename}, Exception Message: {e.Message}");
+				BlackVueDownloaderCopyStats.Errored++;
+				return;
+			}
 
-            try
-            {
-                tempFilepath = Path.Combine(tempdir, filename);
-            }
-            catch (Exception e)
-            {
-                logger.Error($"Path Combine exception for temp_filepath, filename {filename}, Exception Message: {e.Message}");
-                BlackVueDownloaderCopyStats.Errored++;
-                return;
-            }
+			try
+			{
+				tempFilepath = Path.Combine(tempdir, filename);
+			}
+			catch (Exception e)
+			{
+				logger.Error($"Path Combine exception for temp_filepath, filename {filename}, Exception Message: {e.Message}");
+				BlackVueDownloaderCopyStats.Errored++;
+				return;
+			}
 
-            if (_fileSystemHelper.Exists(filepath))
-            {
-                logger.Info($"File exists {filepath}, ignoring");
-                BlackVueDownloaderCopyStats.Ignored++;
-            }
-            else
-            {
-                try
-                {
-                    var url = $"http://{ip}/Record/{filename}";
+			if (_fileSystemHelper.Exists(filepath))
+			{
+				logger.Info($"File exists {filepath}, ignoring");
+				BlackVueDownloaderCopyStats.Ignored++;
+			}
+			else
+			{
+				try
+				{
+					var url = $"http://{ip}/Record/{filename}";
 
-                    var tempfile = Path.Combine(tempdir, filename);
-                    var targetfile = Path.Combine(targetdir, filename);
+					var tempfile = Path.Combine(tempdir, filename);
+					var targetfile = Path.Combine(targetdir, filename);
 
-                    // If it already exists in the _tmp directory, delete it.
-                    if (_fileSystemHelper.Exists(tempFilepath))
-                    {
-                        logger.Info($"File exists in tmp {tempFilepath}, deleting");
-                        BlackVueDownloaderCopyStats.TmpDeleted++;
-                        _fileSystemHelper.Delete(tempFilepath);
-                    }
+					// If it already exists in the _tmp directory, delete it.
+					if (_fileSystemHelper.Exists(tempFilepath))
+					{
+						logger.Info($"File exists in tmp {tempFilepath}, deleting");
+						BlackVueDownloaderCopyStats.TmpDeleted++;
+						_fileSystemHelper.Delete(tempFilepath);
+					}
 
 					// Download to the temp directory, that way, if the file is partially downloaded,
 					// it won't leave a partial file in the target directory
 					logger.Info($"Downloading {filetype} file: {url}");
-	                Stopwatch st = Stopwatch.StartNew();
-					url.DownloadFileAsync(tempdir).Wait();
-	                st.Stop();
-	                BlackVueDownloaderCopyStats.DownloadingTime = BlackVueDownloaderCopyStats.DownloadingTime.Add(st.Elapsed);
+					Stopwatch st = Stopwatch.StartNew();
 
-	                FileInfo fi = new FileInfo(tempfile);
+					var progress = new Progress<Tuple<double, string, string, string>>();
 
-	                BlackVueDownloaderCopyStats.TotalDownloaded += fi.Length;
-					 
+					progress.ProgressChanged += (sender, value) =>
+					{
+						Console.Write("\r%{0:N0} Total Downloaded: {1} Total Size: {2} Per Second: {3}", value.Item1, value.Item3, value.Item2, value.Item4);
+					};
+
+					var cancellationToken = new CancellationTokenSource();
+
+					DownloadFileFromWebAsync(url, progress, cancellationToken.Token, tempFilepath).Wait();
+
+					st.Stop();
+					BlackVueDownloaderCopyStats.DownloadingTime = BlackVueDownloaderCopyStats.DownloadingTime.Add(st.Elapsed);
+
+					FileInfo fi = new FileInfo(tempfile);
+
+					BlackVueDownloaderCopyStats.TotalDownloaded += fi.Length;
+
 					// File downloaded. Move from temp to target.
 					_fileSystemHelper.Move(tempfile, targetfile);
 
-                    logger.Info($"Downloaded {filetype} file: {url}");
-                    BlackVueDownloaderCopyStats.Copied++;
-                }
-                catch (FlurlHttpTimeoutException e)
-                {
-                    logger.Error($"FlurlHttpTimeoutException: {e.Message}");
-                    BlackVueDownloaderCopyStats.Errored++;
-                }
-                catch (FlurlHttpException e)
-                {
-                    if (e.Call.Response != null)
-                    {
+					logger.Info($"Downloaded {filetype} file: {url}");
+					BlackVueDownloaderCopyStats.Copied++;
+				}
+				catch (FlurlHttpTimeoutException e)
+				{
+					logger.Error($"FlurlHttpTimeoutException: {e.Message}");
+					BlackVueDownloaderCopyStats.Errored++;
+				}
+				catch (FlurlHttpException e)
+				{
+					if (e.Call.Response != null)
+					{
 						logger.Error($"Failed with response code: {e.Call.Response.StatusCode}");
-                    }
-                    Console.Write($"Failed before getting a response: {e.Message}");
-                    BlackVueDownloaderCopyStats.Errored++;
-                }
-                catch (Exception e)
-                {
-                    logger.Error($"Exception: {e.Message}");
-                    BlackVueDownloaderCopyStats.Errored++;
-                }
-            }
-        }
+					}
+					Console.Write($"Failed before getting a response: {e.Message}");
+					BlackVueDownloaderCopyStats.Errored++;
+				}
+				catch (Exception e)
+				{
+					logger.Error($"Exception: {e.Message}");
+					BlackVueDownloaderCopyStats.Errored++;
+				}
+			}
+		}
 
-	    /// <summary>
-	    /// For the list, loop through and process it
-	    /// </summary>
-	    /// <param name="ip"></param>
-	    /// <param name="list"></param>
-	    /// <param name="tempdir"></param>
-	    /// <param name="targetdir"></param>
-	    public void ProcessList(string ip, IList<string> list, string tempdir, string targetdir)
+		/// <summary>
+		/// For the list, loop through and process it
+		/// </summary>
+		/// <param name="ip"></param>
+		/// <param name="list"></param>
+		/// <param name="tempdir"></param>
+		/// <param name="targetdir"></param>
+		public void ProcessList(string ip, List<Tuple<string, DateTime>> list, string tempdir, string targetdir)
         {
             var sw = new Stopwatch();
             sw.Start();
@@ -200,18 +255,18 @@ namespace BlackVueDownloader.PCL
             {
                 logger.Info($"Processing File: {s}");
 
-                DownloadFile(ip, s, "video", tempdir, targetdir);
+                DownloadFile(ip, s.Item1, "video", tempdir, targetdir);
 
                 // Line below because the list may include _NF and _NR named files.  Only continue if it's an NF.
                 // Otherwise it's trying to download files that are probably already downloaded
-                if (!s.Contains("_NF.mp4")) continue;
+                if (!s.Item1.Contains("_NF.mp4")) continue;
 
 				// Make filenames for accompanying gps file
-                var gpsfile = s.Replace("_NF.mp4", "_N.gps");
+                var gpsfile = s.Item1.Replace("_NF.mp4", "_N.gps");
                 DownloadFile(ip, gpsfile, "gps", tempdir, targetdir);
 
 				// Make filenames for accompanying gff file
-				var gffile = s.Replace("_NF.mp4", "_N.3gf");
+				var gffile = s.Item1.Replace("_NF.mp4", "_N.3gf");
                 DownloadFile(ip, gffile, "3gf", tempdir, targetdir);
             }
 
@@ -260,5 +315,61 @@ namespace BlackVueDownloader.PCL
                 throw new Exception(e.Message);
             }
         }
-    }
+
+		public async Task DownloadFileFromWebAsync(string url, IProgress<Tuple<double, string, string,string>> progress, CancellationToken token, string outputFile)
+		{
+			var client = new HttpClient();
+			var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
+
+			if (!response.IsSuccessStatusCode)
+			{
+				throw new Exception(string.Format("The request returned with HTTP status code {0}", response.StatusCode));
+			}
+
+			var total = response.Content.Headers.ContentLength.HasValue ? response.Content.Headers.ContentLength.Value : -1L;
+			var canReportProgress = total != -1 && progress != null;
+
+			using (var stream = await response.Content.ReadAsStreamAsync())
+				using(var fileStream = File.OpenWrite(outputFile))
+			{
+				var totalRead = 0L;
+				var buffer = new byte[4096];
+				var isMoreToRead = true;
+				Stopwatch st = new Stopwatch();
+				
+				do
+				{
+					st.Start();
+					token.ThrowIfCancellationRequested();
+
+					var read = await stream.ReadAsync(buffer, 0, buffer.Length, token);
+
+					if (read == 0)
+					{
+						isMoreToRead = false;
+					}
+					else
+					{
+						var data = new byte[read];
+						buffer.ToList().CopyTo(0, data, 0, read);
+
+						fileStream.Write(data);
+
+						totalRead += read;
+						st.Stop();
+
+						var currentSpeed = ((buffer.Length * 1000) / (st.ElapsedMilliseconds + 1)) * 8;
+						st.Reset();
+
+						if (canReportProgress)
+						{
+							double precent = (totalRead * 1d) / (total * 1d) * 100;
+
+							progress.Report(new Tuple<double, string, string, string>(precent, ByteSize.FromBytes(totalRead).ToString(), ByteSize.FromBytes(total).ToString(), ByteSize.FromBits(currentSpeed).ToString()));
+						}
+					}
+				} while (isMoreToRead);
+			}
+		}
+	}
 }

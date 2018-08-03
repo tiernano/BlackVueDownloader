@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using BlackVueDownloader.PCL;
 using Flurl.Http.Testing;
@@ -12,29 +14,47 @@ namespace BlackVueDownloader.Tests
     {
         // ReSharper disable once NotAccessedField.Local
         private readonly ITestOutputHelper _output;
-
+		
         public BlackVueDownloaderTests(ITestOutputHelper output)
         {
-            _output = output;
+            _output = output;		
         }
 
-        private static string GenerateRecords(int numRecords)
-        {
-            string ret = null;
-            var date = DateTime.Now.ToString("yyyyMMdd");
+		public static string GenerateRecords(string inputDate, int numRecords, int days)
+		{
+			string ret = null;
 
-            for (var i = 0; i < numRecords; i++)
-            {
-                ret += $"n:/Record/{date}_{i}_NF.mp4,s:1000000{BlackVueDownloaderExtensions.FileSeparator}";
-                ret += $"n:/Record/{date}_{i}_NR.mp4,s:1000000";
-                if (i + 1 < numRecords)
-                    ret += BlackVueDownloaderExtensions.FileSeparator;
-            }
+			var date = DateTime.Now;
+			
+			if (!string.IsNullOrEmpty(inputDate))
+			{
+				date = DateTime.Parse(inputDate);
+			}
 
-            return ret;
-        }
+			string dateString = date.ToString("yyyyMMdd");
 
-        [Theory]
+			int time = 120101;
+			int daysLeft = days;
+
+			for (var i = 0; i < numRecords; i++)
+			{
+				ret += $"n:/Record/{dateString}_{time + i}_NF.mp4,s:1000000{BlackVueDownloaderExtensions.FileSeparator}";
+				ret += $"n:/Record/{dateString}_{time + i}_NR.mp4,s:1000000";
+				if (i + 1 < numRecords)
+					ret += BlackVueDownloaderExtensions.FileSeparator;
+
+				if (daysLeft > 1)
+				{
+					date = date.AddDays(1);
+					dateString = date.ToString("yyyyMMdd");
+					daysLeft--;
+				}
+			}
+
+			return ret;
+		}
+
+		[Theory]
         [InlineData("192.168.1.1")]
         [InlineData("192.168.1")]
         public void IsValidIpTheory(string ip)
@@ -51,21 +71,47 @@ namespace BlackVueDownloader.Tests
         }
 
         [Theory]
-        [InlineData("n:/Record/20160404_12345_NR.mp4,s:1000000" + BlackVueDownloaderExtensions.FileSeparator +
-                    "n:/Record/20160404_12345_NF.mp4,s:1000000","20160404_12345_NR.mp4", 2)]
-        [InlineData(
-            "n:/Record/20160404_12345_NR.mp4,s:1000000" + BlackVueDownloaderExtensions.FileSeparator + "n:/Record/20160404_12345_NF.mp4,s:1000000" + BlackVueDownloaderExtensions.FileSeparator + "n:/Record/20160404_12346_NR.mp4,s:1000000" + BlackVueDownloaderExtensions.FileSeparator + "n:/Record/20160404_12346_NF.mp4,s:1000000",
-            "20160404_12345_NR.mp4", 4)]
+		[ClassData(typeof(BlackVueDownloadTestDataStrings))]
         public void GetListOfFilesFromResponseTest(string body, string firstval, int numelements)
         {
             var blackVueDownloader = new PCL.BlackVueDownloader();
 
             var list = blackVueDownloader.GetListOfFilesFromResponse(body);
             Assert.Equal(numelements, list.Count);
-            Assert.Equal(firstval, list[0]);
+            Assert.Equal(firstval, list[0].Item1);
         }
 
-        [Theory]
+
+		[Theory]
+		[ClassData(typeof(BlackVueDownloadTestDataDates))]
+		public void GetDatesFromFiles(string body, DateTime firstVal, int numElements)
+		{
+			var blackVueDownloader = new PCL.BlackVueDownloader();
+
+			var list = blackVueDownloader.GetListOfFilesFromResponse(body);
+
+			Assert.Equal(firstVal, list[0].Item2);
+
+			Assert.Equal(numElements, list.Count);
+		}
+
+		[Theory]
+		[ClassData(typeof(BlackVueDownloadTestDataFilterDates))]
+		public void TestDateFilder(string body, DateTime firstVal, int numElements)
+		{
+			var blackVueDownloader = new PCL.BlackVueDownloader();
+
+			var list = blackVueDownloader.GetListOfFilesFromResponse(body);
+
+			var filteredList = blackVueDownloader.FilterList(list, firstVal, firstVal.AddDays(0));
+
+			Assert.Equal(firstVal, list[0].Item2);
+
+			Assert.Equal(numElements, filteredList.Count);
+			
+		}
+
+		[Theory]
         [InlineData("192.168.1.1")]
         public void QueryCameraForFileListTest(string ip)
         {
@@ -155,7 +201,7 @@ namespace BlackVueDownloader.Tests
 
             using (var httpTest = new HttpTest())
             {
-                httpTest.RespondWith(GenerateRecords(numRecords));
+                httpTest.RespondWith(GenerateRecords("04/04/2016", numRecords, 1));
 
                 var body = blackVueDownloader.QueryCameraForFileList(ip);
 
@@ -183,7 +229,7 @@ namespace BlackVueDownloader.Tests
 
             var httpTest = new HttpTest();
 
-            var list = blackVueDownloader.GetListOfFilesFromResponse(GenerateRecords(numRecords));
+            var list = blackVueDownloader.GetListOfFilesFromResponse(GenerateRecords("04/04/2016", numRecords,1));
 
             Assert.Equal(numRecords*2, list.Count);
 
@@ -264,4 +310,40 @@ namespace BlackVueDownloader.Tests
             Assert.Equal(1, blackVueDownloader.BlackVueDownloaderCopyStats.Ignored);
         }
     }
+
+	public class BlackVueDownloadTestDataStrings : IEnumerable<object[]>
+	{
+		public IEnumerator<object[]> GetEnumerator()
+		{
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("04/04/2016", 1,1), "20160404_120101_NF.mp4", 2 };
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("08/08/2018", 2,2), "20180808_120101_NF.mp4", 4 };
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("13/12/2017", 8,4), "20171213_120101_NF.mp4", 16 };
+		}
+
+		IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+	}
+
+	public class BlackVueDownloadTestDataDates : IEnumerable<object[]>
+	{
+		public IEnumerator<object[]> GetEnumerator()
+		{
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("04/04/2016", 1 ,1), new DateTime(2016,04,04,12,01,01), 2 };
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("08/08/2018", 2, 2), new DateTime(2018, 08, 08, 12, 01, 01), 4 };
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("13/12/2017", 8, 4), new DateTime(2017, 12, 13, 12, 01, 01), 16 };
+		}
+
+		IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+	}
+
+	public class BlackVueDownloadTestDataFilterDates : IEnumerable<object[]>
+	{
+		public IEnumerator<object[]> GetEnumerator()
+		{
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("04/04/2016", 1, 1), new DateTime(2016, 04, 04, 12, 01, 01), 2 };
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("08/08/2018", 2, 2), new DateTime(2018, 08, 08, 12, 01, 01), 2 };
+			yield return new object[] { BlackVueDownloaderTests.GenerateRecords("13/12/2017", 8, 3), new DateTime(2017, 12, 13, 12, 01, 01), 2 };
+		}
+
+		IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+	}
 }

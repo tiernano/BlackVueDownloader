@@ -1,48 +1,57 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Reflection;
+using BlackVueDownloader.PCL;
+using McMaster.Extensions.CommandLineUtils;
 using NLog;
 
 namespace BlackVueDownloader
 {
     internal class Program
     {
-        private static void Main(string[] args)
-        {
-	        Logger logger = LogManager.GetCurrentClassLogger();
+		private static int Main(string[] args)
+			=> CommandLineApplication.Execute<Program>(args);
 
-            var version = Assembly.GetEntryAssembly().GetName().Version.ToString();
+		[Required]
+		[Option(Description = "Required: IP Address", LongName = "ipaddress", ShortName = "ip",  ShowInHelpText = true)]
+		public string IPAddress { get; set; }
 
-            logger.Info($"BlackVue Downloader Version {version}");
+		[Required]
+		[Option(Description = "Required: Destination Folder", LongName = "destfolder", ShortName = "dest", ShowInHelpText = true)]
+		public string DestinationFolder { get; set; }
 
-            if (args.Length < 1)
-            {
-                logger.Warn("Usage: BlackVueDownloader.exe ipaddress [destinationdirectory]");
-                return;
-            }
+		[Option(Description ="Download Files for the last X Days", LongName = "lastdays", ShortName ="days", ShowInHelpText =true)]
+		public int LastDays { get; set; }
 
-            var ip = args[0];
-            if (!PCL.BlackVueDownloader.IsValidIp(ip)) 
-            {
-                logger.Error($"Invalid IP Address: {ip}");
-                return;
-            }
+		private void OnExecute()
+		{
+			Logger logger = LogManager.GetCurrentClassLogger();
 
-            var directory = Directory.GetCurrentDirectory();
-            if (args.Length == 2)
-            {
-                directory = args[1];
-            }
+			var version = Assembly.GetEntryAssembly().GetName().Version.ToString();
 
-            try
-            {
-                var blackVueDownloader = new PCL.BlackVueDownloader();
-                blackVueDownloader.Run(ip, directory);
-            }
-            catch(Exception e)
-            {
-                logger.Error($"General exception {e.Message}");
-            }
-        }
+			logger.Info($"BlackVue Downloader Version {version}");
+			
+			try
+			{
+				var blackVueDownloader = new PCL.BlackVueDownloader();
+
+				DownloadOptions downloadOptions = new DownloadOptions()
+				{
+					LastDays = LastDays,
+					OutputDirectory = DestinationFolder,
+					IPAddr = IPAddress
+				};
+				blackVueDownloader.Run(downloadOptions);
+				
+			}
+			catch (Exception e)
+			{
+				logger.Error($"General exception {e.Message}");
+				
+			}
+		}
+
+		
     }
 }

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "BlackVueDownloader.TestConsoleApp": {
+      "commandName": "Project",
+      "commandLineArgs": "http://ftp.heanet.ie/debian-cd/9.5.0-live/amd64/iso-hybrid/debian-live-9.5.0-amd64-lxde.iso"
+    }
+  }
+}
