@@ -15,7 +15,7 @@ namespace BlackVueDownloader
 
 		[Required]
 		[Option(Description = "Required: IP Address", LongName = "ipaddress", ShortName = "ip",  ShowInHelpText = true)]
-		public string IPAddress { get; set; }
+		public string IpAddress { get; set; }
 
 		[Required]
 		[Option(Description = "Required: Destination Folder", LongName = "destfolder", ShortName = "dest", ShowInHelpText = true)]
@@ -40,7 +40,7 @@ namespace BlackVueDownloader
 				{
 					LastDays = LastDays,
 					OutputDirectory = DestinationFolder,
-					IPAddr = IPAddress
+					IPAddr = IpAddress
 				};
 				blackVueDownloader.Run(downloadOptions);
 				
@@ -48,7 +48,6 @@ namespace BlackVueDownloader
 			catch (Exception e)
 			{
 				logger.Error($"General exception {e.Message}");
-				
 			}
 		}
 

@@ -9,16 +9,16 @@ namespace BlackVueDownloader.TestConsoleApp
 		static void Main(string[] args)
 		{
 
-			var progress = new Progress<Tuple<double, string, string, string>>();
+			var progress = new Progress<string>();
 
 			progress.ProgressChanged += (sender, value) =>
 			{
-				Console.Write("\r%{0:N0}\t Total Downloaded: {1}\t Total Size: {2}\t Per Second: {3}\t", value.Item1, value.Item3, value.Item2, value.Item4);
+				Console.Write($"\r{value}");
 			};
 			var cancellationToken = new CancellationToken();
 
 			BlackVueDownloader.PCL.BlackVueDownloader downloader = new PCL.BlackVueDownloader();
-			downloader.DownloadFileFromWebAsync(args[0], progress, cancellationToken, @"c:\temp\test.file").Wait();
+			downloader.DownloadFileFromWebAsync(args[0], progress, cancellationToken, @"c:\temp\test.file").Wait(cancellationToken);
 		}		
 	}
 }

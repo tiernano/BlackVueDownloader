@@ -5,7 +5,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using ByteSizeLib;
@@ -126,7 +125,8 @@ namespace BlackVueDownloader.PCL
 				var date =  DateTime.ParseExact(overall, "yyyyMMdd HHmmss", CultureInfo.InvariantCulture);
 				result.Add(new Tuple<string, DateTime>(x, date));
 			}
-			return result;
+
+	        return result.OrderBy(x => x.Item2).ToList();
         }
 
 		/// <summary>
@@ -191,16 +191,16 @@ namespace BlackVueDownloader.PCL
 					logger.Info($"Downloading {filetype} file: {url}");
 					Stopwatch st = Stopwatch.StartNew();
 
-					var progress = new Progress<Tuple<double, string, string, string>>();
+					var progress = new Progress<string>();
 
 					progress.ProgressChanged += (sender, value) =>
 					{
-						Console.Write("\r%{0:N0} Total Downloaded: {1} Total Size: {2} Per Second: {3}", value.Item1, value.Item3, value.Item2, value.Item4);
+						Console.Write(value);
 					};
 
 					var cancellationToken = new CancellationTokenSource();
 
-					DownloadFileFromWebAsync(url, progress, cancellationToken.Token, tempFilepath).Wait();
+					DownloadFileFromWebAsync(url, progress, cancellationToken.Token, tempFilepath).Wait(cancellationToken.Token);
 
 					st.Stop();
 					BlackVueDownloaderCopyStats.DownloadingTime = BlackVueDownloaderCopyStats.DownloadingTime.Add(st.Elapsed);
@@ -316,60 +316,43 @@ namespace BlackVueDownloader.PCL
             }
         }
 
-		public async Task DownloadFileFromWebAsync(string url, IProgress<Tuple<double, string, string,string>> progress, CancellationToken token, string outputFile)
+		public async Task DownloadFileFromWebAsync(string url, IProgress<string> progress, CancellationToken token, string outputFile)
 		{
-			var client = new HttpClient();
-			var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
+			WebClient client = new WebClient();
 
-			if (!response.IsSuccessStatusCode)
+			client.DownloadProgressChanged += (sender, args) =>
 			{
-				throw new Exception(string.Format("The request returned with HTTP status code {0}", response.StatusCode));
-			}
+				progress.Report(
+					$"Total: {args.TotalBytesToReceive} \t Transfered: {args.BytesReceived} \t ({args.ProgressPercentage}%)");
+			};
 
-			var total = response.Content.Headers.ContentLength.HasValue ? response.Content.Headers.ContentLength.Value : -1L;
-			var canReportProgress = total != -1 && progress != null;
+			await client.DownloadFileTaskAsync(new Uri(url), outputFile);
 
-			using (var stream = await response.Content.ReadAsStreamAsync())
-				using(var fileStream = File.OpenWrite(outputFile))
-			{
-				var totalRead = 0L;
-				var buffer = new byte[4096];
-				var isMoreToRead = true;
-				Stopwatch st = new Stopwatch();
-				
-				do
-				{
-					st.Start();
-					token.ThrowIfCancellationRequested();
+			//var progressMsgHandler = new ProgressMessageHandler(new HttpClientHandler());
 
-					var read = await stream.ReadAsync(buffer, 0, buffer.Length, token);
+			//progressMsgHandler.HttpReceiveProgress += (sender, e) =>
+			//{
+			//	progress.Report(
+			//		$"Total: {e.TotalBytes} \t Transfered: {e.BytesTransferred} \t ({e.ProgressPercentage}%)");
+			//};
 
-					if (read == 0)
-					{
-						isMoreToRead = false;
-					}
-					else
-					{
-						var data = new byte[read];
-						buffer.ToList().CopyTo(0, data, 0, read);
 
-						fileStream.Write(data);
+			//var client = new HttpClient(progressMsgHandler);
 
-						totalRead += read;
-						st.Stop();
+			//using (HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token))
+			//using (Stream streamToReadFrom = await response.Content.ReadAsStreamAsync())
+			//{
+			//	if (!response.IsSuccessStatusCode)
+			//	{
+			//		throw new Exception(string.Format("The request returned with HTTP status code {0}", response.StatusCode));
+			//	}
 
-						var currentSpeed = ((buffer.Length * 1000) / (st.ElapsedMilliseconds + 1)) * 8;
-						st.Reset();
-
-						if (canReportProgress)
-						{
-							double precent = (totalRead * 1d) / (total * 1d) * 100;
-
-							progress.Report(new Tuple<double, string, string, string>(precent, ByteSize.FromBytes(totalRead).ToString(), ByteSize.FromBytes(total).ToString(), ByteSize.FromBits(currentSpeed).ToString()));
-						}
-					}
-				} while (isMoreToRead);
-			}
+			//	string fileToWriteTo = Path.GetTempFileName();
+			//	using (Stream streamToWriteTo = File.Open(fileToWriteTo, FileMode.Create))
+			//	{
+			//		await streamToReadFrom.CopyToAsync(streamToWriteTo, token);
+			//	}
+			//}
 		}
 	}
 }
