@@ -1,56 +1,67 @@
-﻿using System;
+﻿using BlackVueDownloader.PCL;
 using System.ComponentModel.DataAnnotations;
-using System.IO;
-using System.Reflection;
-using BlackVueDownloader.PCL;
 using McMaster.Extensions.CommandLineUtils;
+using McMaster.Extensions.CommandLineUtils.Validation;
 using NLog;
+using System;
+using System.Reflection;
 
 namespace BlackVueDownloader
 {
-    internal class Program
+	internal class Program
     {
-		private static int Main(string[] args)
-			=> CommandLineApplication.Execute<Program>(args);
+	    private static void Main(string[] args)
+	    {
+		    var app = new CommandLineApplication();
+		    app.HelpOption();
 
-		[Required]
-		[Option(Description = "Required: IP Address", LongName = "ipaddress", ShortName = "ip",  ShowInHelpText = true)]
-		public string IpAddress { get; set; }
+		    var ipAddress = app.Option("-i|--ipaddress <IPAddress>", "The IP of the dashcam",
+			    CommandOptionType.SingleValue).IsRequired();
 
-		[Required]
-		[Option(Description = "Required: Destination Folder", LongName = "destfolder", ShortName = "dest", ShowInHelpText = true)]
-		public string DestinationFolder { get; set; }
+		    var destFolder = app.Option("-d|--destfolder <folder>", "Folder to put files into",
+			    CommandOptionType.SingleValue).Accepts(x=>x.ExistingDirectory()).IsRequired();
 
-		[Option(Description ="Download Files for the last X Days", LongName = "lastdays", ShortName ="days", ShowInHelpText =true)]
-		public int LastDays { get; set; }
+		    var lastDays = app.Option<int>("-l|--lastdays <NumberOfDays>", "Number of days to download",
+			    CommandOptionType.SingleValue).Accepts(o => o.Range(1, 50));
 
-		private void OnExecute()
-		{
-			Logger logger = LogManager.GetCurrentClassLogger();
-
-			var version = Assembly.GetEntryAssembly().GetName().Version.ToString();
-
-			logger.Info($"BlackVue Downloader Version {version}");
+		    var useDateFolder = app.Option("-f|--datefolders",
+			    "Use date format for folders, for example 2018-08-03 in the dest folder",
+			    CommandOptionType.SingleOrNoValue);
 			
-			try
+			app.OnExecute(() =>
 			{
-				var blackVueDownloader = new PCL.BlackVueDownloader();
+				Logger logger = LogManager.GetCurrentClassLogger();
 
-				DownloadOptions downloadOptions = new DownloadOptions()
+				var version = Assembly.GetEntryAssembly().GetName().Version.ToString();
+
+				logger.Info($"BlackVue Downloader Version {version}");
+
+				try
 				{
-					LastDays = LastDays,
-					OutputDirectory = DestinationFolder,
-					IPAddr = IpAddress
-				};
-				blackVueDownloader.Run(downloadOptions);
-				
-			}
-			catch (Exception e)
-			{
-				logger.Error($"General exception {e.Message}");
-			}
-		}
+					var blackVueDownloader = new PCL.BlackVueDownloader();
+					
+					DownloadOptions downloadOptions = new DownloadOptions()
+					{
+						LastDays = lastDays.ParsedValue,
+						UseDateFolders = useDateFolder.HasValue(),
+						OutputDirectory = destFolder.Value(),
+						IPAddr = ipAddress.Value()
+					};
+					blackVueDownloader.Run(downloadOptions);
+
+				}
+				catch (Exception e)
+				{
+					logger.Error($"General exception {e.Message}");
+				}
+			});
+
+		    app.Execute(args);
+	    }
+
+		
 
 		
     }
+
 }

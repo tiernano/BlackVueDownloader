@@ -10,5 +10,6 @@ namespace BlackVueDownloader.PCL
 		public string IPAddr { get; set; }
 		public string OutputDirectory { get; set; }
 		public int? LastDays { get; set; }
+		public bool UseDateFolders { get; set; }
 	}
 }

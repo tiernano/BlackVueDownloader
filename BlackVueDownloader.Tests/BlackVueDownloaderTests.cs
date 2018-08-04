@@ -239,7 +239,7 @@ namespace BlackVueDownloader.Tests
                 httpTest.RespondWith("OK");
             }
             blackVueDownloader.BlackVueDownloaderCopyStats.Clear();
-            blackVueDownloader.ProcessList(ip, list, targetdir, targetdir);
+            blackVueDownloader.ProcessList(ip, list, targetdir, targetdir, true);
             Assert.Equal(numRecords*4, blackVueDownloader.BlackVueDownloaderCopyStats.Copied);
 
             // Ignored from above test
@@ -249,7 +249,7 @@ namespace BlackVueDownloader.Tests
             // And if we loop through again, they should all exist, and therefore be "ignored"
             // We need to do this with an unmocked version of the file system helper
             blackVueDownloaderNoMock.BlackVueDownloaderCopyStats.Clear();
-            blackVueDownloaderNoMock.ProcessList(ip, list, targetdir, targetdir);
+            blackVueDownloaderNoMock.ProcessList(ip, list, targetdir, targetdir, true);
             Assert.Equal(numRecords*4, blackVueDownloaderNoMock.BlackVueDownloaderCopyStats.Ignored);
 
             // Fail test
@@ -258,7 +258,7 @@ namespace BlackVueDownloader.Tests
                 httpTest.RespondWith("FAILURE", 500);
             }
             blackVueDownloader.BlackVueDownloaderCopyStats.Clear();
-            blackVueDownloader.ProcessList(ip, list, targetdir, targetdir);
+            blackVueDownloader.ProcessList(ip, list, targetdir, targetdir, true);
             Assert.Equal(numRecords*4, blackVueDownloader.BlackVueDownloaderCopyStats.Errored);
 
             // Timeout Fail test
@@ -267,7 +267,7 @@ namespace BlackVueDownloader.Tests
                 httpTest.SimulateTimeout();
             }
             blackVueDownloader.BlackVueDownloaderCopyStats.Clear();
-            blackVueDownloader.ProcessList(ip, list, targetdir, targetdir);
+            blackVueDownloader.ProcessList(ip, list, targetdir, targetdir, true);
             Assert.Equal(numRecords*4, blackVueDownloader.BlackVueDownloaderCopyStats.Errored);
         }
 

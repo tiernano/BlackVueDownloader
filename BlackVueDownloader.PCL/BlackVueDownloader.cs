@@ -45,26 +45,25 @@ namespace BlackVueDownloader.PCL
         /// </summary>
         public BlackVueDownloader() : this (new FileSystemHelper()) {}
 
-        /// <summary>
-        /// Main control flow
-        /// </summary>
-        /// <param name="ip"></param>
-        /// <param name="directory"></param>
-        public void Run(DownloadOptions options)
+		/// <summary>
+		/// Main control flow
+		/// </summary>
+		/// <param name="options">Object with all required options</param>
+		public void Run(DownloadOptions options)
         {
             var body = QueryCameraForFileList(options.IPAddr);
             var list = GetListOfFilesFromResponse(body);
-			if (options.LastDays.HasValue)
+			if (options.LastDays.HasValue && options.LastDays.Value > 0)
 			{
 				list = FilterList(list, options.LastDays);
 			}
 
-            var tempdir = Path.Combine(options.OutputDirectory, "_tmp");
-            var targetdir = Path.Combine(options.OutputDirectory, "Record");
-
+	        var tempdir = Path.Combine(Path.GetTempPath(), "blackvuedownloader");
+	        string targetdir = options.OutputDirectory;
+			
             CreateDirectories(tempdir, targetdir);
 
-            ProcessList(options.IPAddr, list, tempdir, targetdir);
+            ProcessList(options.IPAddr, list, tempdir, targetdir, options.UseDateFolders);
         }
 
 		public List<Tuple<string, DateTime>> FilterList(List<Tuple<string,DateTime>> input, int? lastDays)
@@ -116,14 +115,17 @@ namespace BlackVueDownloader.PCL
 			foreach(var x in files)
 			{
 				string[] parts = x.Split('_');
+				if (parts.Length == 3)
+				{
 
-				string datePart = parts[0];
-				string timePart = parts[1];
+					string datePart = parts[0];
+					string timePart = parts[1];
 
-				string overall = $"{datePart} {timePart}";
+					string overall = $"{datePart} {timePart}";
 
-				var date =  DateTime.ParseExact(overall, "yyyyMMdd HHmmss", CultureInfo.InvariantCulture);
-				result.Add(new Tuple<string, DateTime>(x, date));
+					var date = DateTime.ParseExact(overall, "yyyyMMdd HHmmss", CultureInfo.InvariantCulture);
+					result.Add(new Tuple<string, DateTime>(x, date));
+				}
 			}
 
 	        return result.OrderBy(x => x.Item2).ToList();
@@ -195,7 +197,7 @@ namespace BlackVueDownloader.PCL
 
 					progress.ProgressChanged += (sender, value) =>
 					{
-						Console.Write(value);
+						Console.Write("\r" + value);
 					};
 
 					var cancellationToken = new CancellationTokenSource();
@@ -240,11 +242,12 @@ namespace BlackVueDownloader.PCL
 		/// <summary>
 		/// For the list, loop through and process it
 		/// </summary>
-		/// <param name="ip"></param>
-		/// <param name="list"></param>
-		/// <param name="tempdir"></param>
-		/// <param name="targetdir"></param>
-		public void ProcessList(string ip, List<Tuple<string, DateTime>> list, string tempdir, string targetdir)
+		/// <param name="ip">IP address of cam</param>
+		/// <param name="list">List fo files to download</param>
+		/// <param name="tempdir">Temporary folder</param>
+		/// <param name="targetdir">final destination</param>
+		/// <param name="useDateFolders">If Ture, use date of the video as folder</param>
+		public void ProcessList(string ip, List<Tuple<string, DateTime>> list, string tempdir, string targetdir, bool useDateFolders)
         {
             var sw = new Stopwatch();
             sw.Start();
@@ -255,7 +258,20 @@ namespace BlackVueDownloader.PCL
             {
                 logger.Info($"Processing File: {s}");
 
-                DownloadFile(ip, s.Item1, "video", tempdir, targetdir);
+	            string finalDir = targetdir;
+
+	            if (useDateFolders)
+	            {
+
+					string dateFolder = s.Item2.ToString("yyyy-MM-dd");
+		            finalDir = Path.Combine(targetdir, dateFolder);
+		            if (!_fileSystemHelper.DirectoryExists(finalDir))
+		            {
+			            _fileSystemHelper.CreateDirectory(finalDir);
+		            }
+	            }
+
+                DownloadFile(ip, s.Item1, "video", tempdir, finalDir);
 
                 // Line below because the list may include _NF and _NR named files.  Only continue if it's an NF.
                 // Otherwise it's trying to download files that are probably already downloaded
@@ -318,15 +334,51 @@ namespace BlackVueDownloader.PCL
 
 		public async Task DownloadFileFromWebAsync(string url, IProgress<string> progress, CancellationToken token, string outputFile)
 		{
-			WebClient client = new WebClient();
+			SystemWebClientFactory fact = new SystemWebClientFactory();
+			var client = fact.Create();
 
 			client.DownloadProgressChanged += (sender, args) =>
 			{
 				progress.Report(
 					$"Total: {ByteSize.FromBytes(args.TotalBytesToReceive).ToString()} \t Transfered: {ByteSize.FromBytes(args.BytesReceived).ToString()} \t ({args.ProgressPercentage}%)");
 			};
-
+			
 			await client.DownloadFileTaskAsync(new Uri(url), outputFile);
 		}
 	}
+
+	public interface IWebClient : IDisposable
+	{
+		// Required methods (subset of `System.Net.WebClient` methods).
+		byte[] DownloadData(Uri address);
+		byte[] UploadData(Uri address, byte[] data);
+
+		event System.Net.DownloadProgressChangedEventHandler DownloadProgressChanged;
+
+		Task DownloadFileTaskAsync(Uri address, string fileName);
+	}
+
+	interface IWebClientFactory
+	{
+		IWebClient Create();
+	}
+
+	public class SystemWebClient : WebClient, IWebClient
+	{
+
+	}
+
+	public class SystemWebClientFactory : IWebClientFactory
+	{
+		#region IWebClientFactory implementation
+
+		public IWebClient Create()
+		{
+			return new SystemWebClient();
+		}
+
+		#endregion
+	}
+
+
 }
