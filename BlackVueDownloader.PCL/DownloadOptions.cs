@@ -11,5 +11,7 @@ namespace BlackVueDownloader.PCL
 		public string OutputDirectory { get; set; }
 		public int? LastDays { get; set; }
 		public bool UseDateFolders { get; set; }
+		public bool DontDownloadVideo { get; set; }
+		public string TempDir { get; set; }
 	}
 }

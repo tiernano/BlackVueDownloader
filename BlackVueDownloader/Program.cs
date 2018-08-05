@@ -27,6 +27,9 @@ namespace BlackVueDownloader
 		    var useDateFolder = app.Option("-f|--datefolders",
 			    "Use date format for folders, for example 2018-08-03 in the dest folder",
 			    CommandOptionType.SingleOrNoValue);
+
+		    var dontDownloadVideo = app.Option("-dv|--novideo", "only download GPS and 3GS files",
+			    CommandOptionType.SingleOrNoValue);
 			
 			app.OnExecute(() =>
 			{
@@ -45,7 +48,8 @@ namespace BlackVueDownloader
 						LastDays = lastDays.ParsedValue,
 						UseDateFolders = useDateFolder.HasValue(),
 						OutputDirectory = destFolder.Value(),
-						IPAddr = ipAddress.Value()
+						IPAddr = ipAddress.Value(),
+						DontDownloadVideo = useDateFolder.HasValue()
 					};
 					blackVueDownloader.Run(downloadOptions);
 

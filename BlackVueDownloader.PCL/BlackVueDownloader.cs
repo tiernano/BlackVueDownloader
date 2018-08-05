@@ -63,7 +63,7 @@ namespace BlackVueDownloader.PCL
 			
             CreateDirectories(tempdir, targetdir);
 
-            ProcessList(options.IPAddr, list, tempdir, targetdir, options.UseDateFolders);
+            ProcessList(options, list);
         }
 
 		public List<Tuple<string, DateTime>> FilterList(List<Tuple<string,DateTime>> input, int? lastDays)
@@ -242,12 +242,9 @@ namespace BlackVueDownloader.PCL
 		/// <summary>
 		/// For the list, loop through and process it
 		/// </summary>
-		/// <param name="ip">IP address of cam</param>
-		/// <param name="list">List fo files to download</param>
-		/// <param name="tempdir">Temporary folder</param>
-		/// <param name="targetdir">final destination</param>
-		/// <param name="useDateFolders">If Ture, use date of the video as folder</param>
-		public void ProcessList(string ip, List<Tuple<string, DateTime>> list, string tempdir, string targetdir, bool useDateFolders)
+		/// <param name="options">options object</param>
+		/// <param name="list">items to process</param>
+		public void ProcessList(DownloadOptions options, List<Tuple<string, DateTime>> list)
         {
             var sw = new Stopwatch();
             sw.Start();
@@ -258,32 +255,30 @@ namespace BlackVueDownloader.PCL
             {
                 logger.Info($"Processing File: {s}");
 
-	            string finalDir = targetdir;
+	            string finalDir = options.OutputDirectory;
 
-	            if (useDateFolders)
+	            if (options.UseDateFolders)
 	            {
 
 					string dateFolder = s.Item2.ToString("yyyy-MM-dd");
-		            finalDir = Path.Combine(targetdir, dateFolder);
+		            finalDir = Path.Combine(options.OutputDirectory, dateFolder);
 		            if (!_fileSystemHelper.DirectoryExists(finalDir))
 		            {
 			            _fileSystemHelper.CreateDirectory(finalDir);
 		            }
 	            }
-
-                DownloadFile(ip, s.Item1, "video", tempdir, finalDir);
+				if(!options.DontDownloadVideo)
+					DownloadFile(options.IPAddr, s.Item1, "video", options.TempDir, finalDir);
 
                 // Line below because the list may include _NF and _NR named files.  Only continue if it's an NF.
                 // Otherwise it's trying to download files that are probably already downloaded
                 if (!s.Item1.Contains("_NF.mp4")) continue;
 
 				// Make filenames for accompanying gps file
-                var gpsfile = s.Item1.Replace("_NF.mp4", "_N.gps");
-                DownloadFile(ip, gpsfile, "gps", tempdir, targetdir);
+				DownloadFile(options.IPAddr, s.Item1.Replace("_NF.mp4", "_N.gps"), "gps", options.TempDir, finalDir);
 
 				// Make filenames for accompanying gff file
-				var gffile = s.Item1.Replace("_NF.mp4", "_N.3gf");
-                DownloadFile(ip, gffile, "3gf", tempdir, targetdir);
+				DownloadFile(options.IPAddr, s.Item1.Replace("_NF.mp4", "_N.3gf"), "3gf", options.TempDir, finalDir);
             }
 
             sw.Stop();
